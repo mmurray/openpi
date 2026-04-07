@@ -5,6 +5,7 @@ from typing import Protocol, TypeAlias, TypeVar, runtime_checkable
 
 import flax.traverse_util as traverse_util
 import jax
+import jax.numpy as jnp
 import numpy as np
 from openpi_client import image_tools
 
@@ -224,23 +225,21 @@ class DeltaActions(DataTransformFn):
 
 @dataclasses.dataclass(frozen=True)
 class AbsoluteActions(DataTransformFn):
-    """Repacks delta actions into absolute action space."""
-
-    # Boolean mask for the action dimensions to be repacked into absolute action space. Length
-    # can be smaller than the actual number of dimensions. If None, this transform is a no-op.
-    # See `make_bool_mask` for more details.
+    """Repack delta actions into absolute action space."""
     mask: Sequence[bool] | None
 
     def __call__(self, data: DataDict) -> DataDict:
         if "actions" not in data or self.mask is None:
             return data
 
-        state, actions = data["state"], data["actions"]
-        mask = np.asarray(self.mask)
+        state = jnp.asarray(data["state"])
+        actions = jnp.asarray(data["actions"])
+        mask = jnp.asarray(self.mask)
         dims = mask.shape[-1]
-        actions[..., :dims] += np.expand_dims(np.where(mask, state[..., :dims], 0), axis=-2)
+        abs_offset = jnp.where(mask, state[..., :dims], 0)
+        abs_offset = abs_offset[..., None, :]
+        actions = actions.at[..., :dims].add(abs_offset)
         data["actions"] = actions
-
         return data
 
 
